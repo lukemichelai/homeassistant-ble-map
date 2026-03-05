@@ -38,6 +38,7 @@ layout_state = {
     "map_height": 5.0,
     "scanner_positions": DEFAULT_SCANNERS,
     "tracked_devices": DEFAULT_TRACKED,
+    "fixed_devices": {},
 }
 if STATE_FILE.exists():
     try:
@@ -176,10 +177,15 @@ def state():
             "xy": estimate_xy(key),
             "scanners": recent,
         })
+    fixed = []
+    for key, cfg in (layout_state.get("fixed_devices", {}) or {}).items():
+        fixed.append({"device_key": key, "name": cfg.get("name") or key, "xy": {"x": cfg.get("x", 0), "y": cfg.get("y", 0)}})
+
     return jsonify({
         "layout": layout_state,
         "map_available": MAP_FILE.exists(),
         "devices": devices,
+        "fixed_devices": fixed,
         "ts": now,
     })
 

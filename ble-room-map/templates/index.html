@@ -1,75 +1,28 @@
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>BLE Room Map</title>
-  <style>
-    body { font-family: sans-serif; margin: 0; }
-    #top { padding: 10px 14px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center; }
-    #map { position: relative; width: 100vw; height: calc(100vh - 52px); background: #f7f7f7 center/contain no-repeat; }
-    .dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); }
-    .scanner { background: #2563eb; }
-    .device { background: #ef4444; }
-    .label { position: absolute; transform: translate(10px, -8px); font-size: 12px; background: rgba(255,255,255,0.9); padding: 2px 6px; border-radius: 6px; }
-    a { text-decoration:none; color:#2563eb; margin-left:10px; }
-  </style>
-</head>
-<body>
-  <div id="top">
-    <strong>BLE Room Map</strong>
-    <div>
-      <a href="devices">Devices</a>
-      <a href="settings">Settings</a>
-    </div>
-  </div>
-  <div id="map"></div>
-
-  <script>
-    const map = document.getElementById('map');
-    let layout = { map_width: 10, map_height: 5, scanner_positions: {} };
-
-    function toPixels(x, y) {
-      const w = map.clientWidth;
-      const h = map.clientHeight;
-      return { left: (x / layout.map_width) * w, top: h - (y / layout.map_height) * h };
-    }
-
-    function clearMap() { map.innerHTML = ''; }
-
-    function addDot(cls, x, y, label) {
-      const p = toPixels(x, y);
-      const d = document.createElement('div');
-      d.className = `dot ${cls}`;
-      d.style.left = p.left + 'px';
-      d.style.top = p.top + 'px';
-      map.appendChild(d);
-
-      const l = document.createElement('div');
-      l.className = 'label';
-      l.style.left = p.left + 'px';
-      l.style.top = p.top + 'px';
-      l.textContent = label;
-      map.appendChild(l);
-    }
-
-    async function tick() {
-      const res = await fetch('api/state');
-      const data = await res.json();
-      layout = data.layout || layout;
-      map.style.backgroundImage = data.map_available ? `url(map.jpg?ts=${data.ts})` : 'none';
-      clearMap();
-
-      Object.entries(layout.scanner_positions || {}).forEach(([id, pos]) => {
-        addDot('scanner', Number(pos.x || 0), Number(pos.y || 0), `📡 ${id}`);
-      });
-
-      (data.devices || []).forEach(dev => {
-        if (dev.xy) addDot('device', dev.xy.x, dev.xy.y, `📱 ${dev.name}`);
-      });
-    }
-
-    tick();
-    setInterval(tick, 2000);
-  </script>
-</body>
-</html>
+<html><head><meta charset="utf-8" /><title>BLE Room Map</title>
+<style>
+body{font-family:sans-serif;margin:0}#top{padding:10px 14px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between}
+#map{position:relative;width:100vw;height:calc(100vh - 52px);background:#f7f7f7 center/contain no-repeat}
+.dot{position:absolute;width:14px;height:14px;border-radius:50%;transform:translate(-50%,-50%);transition:left .5s linear,top .5s linear}
+.scanner{background:#2563eb}.device{background:#ef4444}.fixed{background:#10b981}
+.label{position:absolute;transform:translate(10px,-8px);font-size:12px;background:rgba(255,255,255,.9);padding:2px 6px;border-radius:6px;transition:left .5s linear,top .5s linear}
+a{text-decoration:none;color:#2563eb;margin-left:10px}
+</style></head><body>
+<div id="top"><strong>BLE Room Map</strong><div><a href="devices">Devices</a><a href="settings">Settings</a></div></div>
+<div id="map"></div>
+<script>
+const map=document.getElementById('map'); let layout={map_width:10,map_height:5,scanner_positions:{}}; let mapSet=false;
+function px(x,y){const w=map.clientWidth,h=map.clientHeight;return{l:(x/layout.map_width)*w,t:h-(y/layout.map_height)*h}}
+function upsert(id,cls,x,y,label){const p=px(x,y); let d=document.getElementById('d_'+id), l=document.getElementById('l_'+id);
+ if(!d){d=document.createElement('div');d.id='d_'+id;d.className='dot '+cls;map.appendChild(d)} else d.className='dot '+cls;
+ if(!l){l=document.createElement('div');l.id='l_'+id;l.className='label';map.appendChild(l)}
+ d.style.left=p.l+'px'; d.style.top=p.t+'px'; l.style.left=p.l+'px'; l.style.top=p.t+'px'; l.textContent=label;
+}
+async function tick(){const data=await (await fetch('api/state')).json(); layout=data.layout||layout;
+ if(!mapSet){map.style.backgroundImage=data.map_available?`url(map.jpg?ts=${data.ts})`:'none'; mapSet=true;}
+ Object.entries(layout.scanner_positions||{}).forEach(([id,pos])=>upsert('s_'+id,'scanner',Number(pos.x||0),Number(pos.y||0),`📡 ${id}`));
+ (data.fixed_devices||[]).forEach(d=>upsert('f_'+d.device_key,'fixed',Number(d.xy.x||0),Number(d.xy.y||0),`📍 ${d.name}`));
+ (data.devices||[]).forEach(d=>{if(d.xy) upsert('m_'+d.device_key,'device',d.xy.x,d.xy.y,`📱 ${d.name}`)});
+}
+setInterval(tick,1000); tick();
+</script></body></html>
