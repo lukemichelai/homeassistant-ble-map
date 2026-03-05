@@ -1,0 +1,39 @@
+name: "BLE Room Map"
+version: "0.1.0"
+slug: "ble_room_map"
+description: "Visualize BLE devices on a simple room map from MQTT scanner RSSI"
+startup: services
+boot: auto
+init: false
+host_network: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:map-marker-radius
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: Web UI
+options:
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_user: "mqtt_ble"
+  mqtt_pass: ""
+  topic_prefix: "ble_scanner"
+  scanner_positions:
+    rpi5-ble:
+      x: 1.0
+      y: 1.0
+    macmini-bedroom:
+      x: 8.0
+      y: 1.0
+  tx_power: -59
+  n_factor: 2.2
+schema:
+  mqtt_host: str
+  mqtt_port: int
+  mqtt_user: str
+  mqtt_pass: password?
+  topic_prefix: str
+  scanner_positions: dict
+  tx_power: int
+  n_factor: float

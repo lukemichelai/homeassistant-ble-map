@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>BLE Room Map</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 16px; }
+    #controls { display: grid; gap: 8px; max-width: 900px; margin-bottom: 12px; }
+    #map { position: relative; width: 100%; max-width: 900px; height: 500px; border: 1px solid #ccc; background: #f7f7f7 center/cover no-repeat; }
+    .dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); }
+    .scanner { background: #2563eb; }
+    .device { background: #ef4444; }
+    .label { position: absolute; transform: translate(10px, -8px); font-size: 12px; background: rgba(255,255,255,0.9); padding: 2px 6px; border-radius: 6px; }
+    pre { font-size: 12px; background: #111; color: #ddd; padding: 8px; overflow: auto; max-width: 900px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  </style>
+</head>
+<body>
+  <h3>BLE Room Map</h3>
+
+  <div id="controls">
+    <div class="row">
+      <input type="file" id="mapFile" accept="image/jpeg,image/png" />
+      <button id="uploadBtn">Upload floor map</button>
+    </div>
+
+    <div class="row">
+      <label>Map width (m): <input id="mapWidth" type="number" step="0.1" value="10"></label>
+      <label>Map height (m): <input id="mapHeight" type="number" step="0.1" value="5"></label>
+      <button id="saveLayoutBtn">Save layout</button>
+    </div>
+
+    <div class="row">
+      <label>Scanner ID: <input id="scannerId" placeholder="rpi5-ble"></label>
+      <small>Clicca sulla mappa per posizionare lo scanner selezionato.</small>
+    </div>
+  </div>
+
+  <div id="map"></div>
+  <h4>Live state</h4>
+  <pre id="raw"></pre>
+
+  <script>
+    const map = document.getElementById('map');
+    const raw = document.getElementById('raw');
+    const mapFile = document.getElementById('mapFile');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const saveLayoutBtn = document.getElementById('saveLayoutBtn');
+    const mapWidthEl = document.getElementById('mapWidth');
+    const mapHeightEl = document.getElementById('mapHeight');
+    const scannerIdEl = document.getElementById('scannerId');
+
+    let layout = { map_width: 10, map_height: 5, scanner_positions: {} };
+
+    function toPixels(x, y) {
+      const w = map.clientWidth;
+      const h = map.clientHeight;
+      return {
+        left: (x / layout.map_width) * w,
+        top: h - (y / layout.map_height) * h,
+      };
+    }
+
+    function toMeters(px, py) {
+      const rect = map.getBoundingClientRect();
+      const x = ((px - rect.left) / rect.width) * layout.map_width;
+      const y = ((rect.bottom - py) / rect.height) * layout.map_height;
+      return { x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) };
+    }
+
+    function clearMap() { map.innerHTML = ''; }
+
+    function addDot(cls, x, y, label) {
+      const p = toPixels(x, y);
+      const d = document.createElement('div');
+      d.className = `dot ${cls}`;
+      d.style.left = p.left + 'px';
+      d.style.top = p.top + 'px';
+      map.appendChild(d);
+
+      const l = document.createElement('div');
+      l.className = 'label';
+      l.style.left = p.left + 'px';
+      l.style.top = p.top + 'px';
+      l.textContent = label;
+      map.appendChild(l);
+    }
+
+    async function saveLayout() {
+      await fetch('/api/layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(layout),
+      });
+    }
+
+    map.addEventListener('click', async (ev) => {
+      const scannerId = (scannerIdEl.value || '').trim();
+      if (!scannerId) return;
+      const m = toMeters(ev.clientX, ev.clientY);
+      layout.scanner_positions[scannerId] = m;
+      await saveLayout();
+      await tick();
+    });
+
+    uploadBtn.addEventListener('click', async () => {
+      const file = mapFile.files?.[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      await fetch('/api/map', { method: 'POST', body: fd });
+      await tick();
+    });
+
+    saveLayoutBtn.addEventListener('click', async () => {
+      layout.map_width = Number(mapWidthEl.value || 10);
+      layout.map_height = Number(mapHeightEl.value || 5);
+      await saveLayout();
+      await tick();
+    });
+
+    async function tick() {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+
+      layout = data.layout || layout;
+      mapWidthEl.value = layout.map_width;
+      mapHeightEl.value = layout.map_height;
+
+      map.style.backgroundImage = data.map_available ? 'url(/map.jpg)' : 'none';
+      clearMap();
+
+      Object.entries(layout.scanner_positions || {}).forEach(([id, pos]) => {
+        addDot('scanner', Number(pos.x || 0), Number(pos.y || 0), `📡 ${id}`);
+      });
+
+      (data.devices || []).forEach(dev => {
+        if (dev.xy) addDot('device', dev.xy.x, dev.xy.y, `📱 ${dev.name}`);
+      });
+
+      raw.textContent = JSON.stringify(data, null, 2);
+    }
+
+    tick();
+    setInterval(tick, 2000);
+  </script>
+</body>
+</html>
