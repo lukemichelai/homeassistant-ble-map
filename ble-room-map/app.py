@@ -64,18 +64,44 @@ def estimate_xy(device_key: str):
     scanners = layout_state.get("scanner_positions", {})
     if not points:
         return None
-    sw = sx = sy = 0.0
+
+    anchors = []
     for scanner_id, data in points.items():
         pos = scanners.get(scanner_id)
         if not pos:
             continue
-        rssi = data.get("rssi")
-        if rssi is None:
+        d = float(data.get("distance") or 0)
+        if d <= 0:
             continue
-        w = max(1.0, 100 + float(rssi))
+        anchors.append({
+            "id": scanner_id,
+            "x": float(pos.get("x", 0)),
+            "y": float(pos.get("y", 0)),
+            "d": d,
+        })
+
+    if not anchors:
+        return None
+
+    # two-anchor interpolation on the segment (stable and intuitive)
+    if len(anchors) == 2:
+        a, b = anchors[0], anchors[1]
+        total = a["d"] + b["d"]
+        if total <= 0:
+            return {"x": round((a["x"] + b["x"]) / 2, 2), "y": round((a["y"] + b["y"]) / 2, 2)}
+        # nearer to anchor with smaller distance
+        t = b["d"] / total
+        x = a["x"] + (b["x"] - a["x"]) * t
+        y = a["y"] + (b["y"] - a["y"]) * t
+        return {"x": round(x, 2), "y": round(y, 2)}
+
+    # 3+ anchors: inverse-distance weighted centroid
+    sw = sx = sy = 0.0
+    for a in anchors:
+        w = 1.0 / max(0.2, a["d"])
         sw += w
-        sx += float(pos.get("x", 0)) * w
-        sy += float(pos.get("y", 0)) * w
+        sx += a["x"] * w
+        sy += a["y"] * w
     if sw == 0:
         return None
     return {"x": round(sx / sw, 2), "y": round(sy / sw, 2)}
@@ -170,11 +196,18 @@ def state():
             continue
         tracked = layout_state.get("tracked_devices", {})
         alias = tracked.get(key) or tracked.get((name_index.get(key) or "").strip())
+        nearest = None
+        try:
+            nearest = sorted(recent.items(), key=lambda kv: kv[1].get("distance", 9999))[0][0]
+        except Exception:
+            nearest = None
+
         devices.append({
             "device_key": key,
             "name": alias or name_index.get(key) or key,
             "raw_name": name_index.get(key) or "",
             "xy": estimate_xy(key),
+            "nearest_scanner": nearest,
             "scanners": recent,
         })
     fixed = []
