@@ -41,6 +41,7 @@ layout_state = {
     "scanner_positions": DEFAULT_SCANNERS,
     "tracked_devices": DEFAULT_TRACKED,
     "fixed_devices": {},
+    "hidden_devices": [],
 }
 if STATE_FILE.exists():
     try:
@@ -201,6 +202,8 @@ def save_layout():
         layout_state["scanner_positions"] = data["scanner_positions"]
     if "tracked_devices" in data and isinstance(data["tracked_devices"], dict):
         layout_state["tracked_devices"] = data["tracked_devices"]
+    if "hidden_devices" in data and isinstance(data["hidden_devices"], list):
+        layout_state["hidden_devices"] = data["hidden_devices"]
     persist_layout()
     return jsonify({"ok": True, "layout": layout_state})
 
@@ -209,6 +212,7 @@ def save_layout():
 def state():
     devices = []
     now = int(time.time())
+    hidden = set(layout_state.get("hidden_devices", []) or [])
     for key, scanners in latest.items():
         recent = {k: v for k, v in scanners.items() if now - int(v.get("ts", now)) < 90}
         if not recent:
@@ -230,7 +234,7 @@ def state():
                 except Exception:
                     pass
 
-        devices.append({
+        device_obj = {
             "device_key": key,
             "name": alias or name_index.get(key) or key,
             "raw_name": name_index.get(key) or "",
@@ -238,7 +242,10 @@ def state():
             "nearest_scanner": nearest,
             "scanners": recent,
             "triangulated_distances": tri,
-        })
+        }
+        if key in hidden:
+            continue
+        devices.append(device_obj)
     fixed = []
     for key, cfg in (layout_state.get("fixed_devices", {}) or {}).items():
         fixed.append({"device_key": key, "name": cfg.get("name") or key, "xy": {"x": cfg.get("x", 0), "y": cfg.get("y", 0)}})

@@ -1,20 +1,34 @@
 <!doctype html><html><head><meta charset="utf-8"/><title>Devices</title>
-<style>body{font-family:sans-serif;margin:16px}table{border-collapse:collapse;width:100%;max-width:1100px}th,td{border:1px solid #ddd;padding:8px;font-size:13px}th{background:#f5f5f5}input{width:100%}button{padding:4px 8px}a{text-decoration:none;color:#2563eb;margin-right:8px}</style>
+<style>body{font-family:sans-serif;margin:16px}table{border-collapse:collapse;width:100%;max-width:1200px}th,td{border:1px solid #ddd;padding:8px;font-size:13px}th{background:#f5f5f5}input{width:100%}button{padding:4px 8px}a{text-decoration:none;color:#2563eb;margin-right:8px}.muted{color:#888}</style>
 </head><body>
 <div><a href="./">← Map</a><a href="settings">Settings</a></div>
-<h3>Tracked devices</h3><p>Alias and fixed-position controls.</p>
-<table><thead><tr><th>device_key</th><th>raw_name</th><th>alias</th><th>fixed x</th><th>fixed y</th><th>action</th></tr></thead><tbody id="tb"></tbody></table>
+<h3>Tracked devices</h3><p>Alias, fixed position and visibility controls.</p>
+<table><thead><tr><th>device_key</th><th>raw_name</th><th>alias</th><th>fixed x</th><th>fixed y</th><th>visible</th><th>action</th></tr></thead><tbody id="tb"></tbody></table>
 <script>
-const tb=document.getElementById('tb'); let layout={tracked_devices:{},fixed_devices:{}}; let editing=false;
-async function saveTracked(t){await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tracked_devices:t})})}
-async function saveFixed(f){await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fixed_devices:f})})}
-async function load(){ if(editing) return; const data=await (await fetch('api/state')).json(); layout=data.layout||layout; const tracked=layout.tracked_devices||{}; const fixed=layout.fixed_devices||{}; tb.innerHTML='';
-(data.devices||[]).forEach(d=>{const tr=document.createElement('tr'); const fx=fixed[d.device_key]?.x ?? ''; const fy=fixed[d.device_key]?.y ?? '';
-tr.innerHTML=`<td>${d.device_key}</td><td>${d.raw_name||''}</td><td><input id="a" value="${(tracked[d.device_key]||'').replace(/"/g,'&quot;')}"></td><td><input id="x" value="${fx}"></td><td><input id="y" value="${fy}"></td><td><button id="s">Save</button> <button id="r">Remove</button></td>`;
-const a=tr.querySelector('#a'), x=tr.querySelector('#x'), y=tr.querySelector('#y'), s=tr.querySelector('#s'), r=tr.querySelector('#r');
-[a,x,y].forEach(i=>{i.onfocus=()=>editing=true; i.onblur=()=>setTimeout(()=>editing=false,200)});
-s.onclick=async()=>{tracked[d.device_key]=a.value.trim(); if(x.value!==''&&y.value!==''){fixed[d.device_key]={name:tracked[d.device_key]||d.raw_name||d.device_key,x:Number(x.value),y:Number(y.value)}}; await saveTracked(tracked); await saveFixed(fixed); await load();};
-r.onclick=async()=>{delete tracked[d.device_key]; delete fixed[d.device_key]; await saveTracked(tracked); await saveFixed(fixed); await load();};
-tb.appendChild(tr);});}
-load(); setInterval(load,2000);
+const tb=document.getElementById('tb');
+let layout={tracked_devices:{},fixed_devices:{},hidden_devices:[]}; let editing=false;
+async function save(p){await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)})}
+async function load(){
+  if(editing) return;
+  const data=await (await fetch('api/state')).json();
+  layout=data.layout||layout;
+  const tracked=layout.tracked_devices||{}, fixed=layout.fixed_devices||{}, hidden=new Set(layout.hidden_devices||[]);
+  tb.innerHTML='';
+  // Build rows from live + hidden keys
+  const keys=new Set((data.devices||[]).map(d=>d.device_key));
+  (layout.hidden_devices||[]).forEach(k=>keys.add(k));
+  [...keys].forEach(key=>{
+    const d=(data.devices||[]).find(x=>x.device_key===key) || {device_key:key,raw_name:'',name:key};
+    const fx=fixed[key]?.x ?? '', fy=fixed[key]?.y ?? '';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${key}</td><td>${d.raw_name||''}</td><td><input id='a' value="${(tracked[key]||'').replace(/"/g,'&quot;')}"></td><td><input id='x' value='${fx}'></td><td><input id='y' value='${fy}'></td><td>${hidden.has(key)?'<span class="muted">hidden</span>':'visible'}</td><td><button id='s'>Save</button> <button id='r'>Remove</button> <button id='h'>${hidden.has(key)?'Unhide':'Hide'}</button></td>`;
+    const a=tr.querySelector('#a'), x=tr.querySelector('#x'), y=tr.querySelector('#y'), s=tr.querySelector('#s'), r=tr.querySelector('#r'), h=tr.querySelector('#h');
+    [a,x,y].forEach(i=>{i.onfocus=()=>editing=true;i.onblur=()=>setTimeout(()=>editing=false,200)});
+    s.onclick=async()=>{tracked[key]=a.value.trim(); if(x.value!==''&&y.value!==''){fixed[key]={name:tracked[key]||d.name||key,x:Number(x.value),y:Number(y.value)}}; await save({tracked_devices:tracked,fixed_devices:fixed}); await load();};
+    r.onclick=async()=>{delete tracked[key]; delete fixed[key]; hidden.delete(key); await save({tracked_devices:tracked,fixed_devices:fixed,hidden_devices:[...hidden]}); await load();};
+    h.onclick=async()=>{ if(hidden.has(key)) hidden.delete(key); else hidden.add(key); await save({hidden_devices:[...hidden]}); await load(); };
+    tb.appendChild(tr);
+  });
+}
+load(); setInterval(load,3000);
 </script></body></html>
