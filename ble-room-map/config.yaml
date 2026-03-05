@@ -25,13 +25,7 @@ options:
   mqtt_user: "mqtt_ble"
   mqtt_pass: ""
   topic_prefix: "ble_scanner"
-  scanner_positions:
-    rpi5-ble:
-      x: 1.0
-      y: 1.0
-    macmini-bedroom:
-      x: 8.0
-      y: 1.0
+  scanner_positions_json: '{"rpi5-ble":{"x":1.0,"y":1.0},"macmini-bedroom":{"x":8.0,"y":1.0}}'
   tx_power: -59
   n_factor: 2.2
 schema:
@@ -40,6 +34,6 @@ schema:
   mqtt_user: str
   mqtt_pass: password?
   topic_prefix: str
-  scanner_positions: dict
+  scanner_positions_json: str
   tx_power: int
   n_factor: float
