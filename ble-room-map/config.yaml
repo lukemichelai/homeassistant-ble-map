@@ -1,7 +1,13 @@
 name: "BLE Room Map"
-version: "0.1.0"
+version: "0.1.1"
 slug: "ble_room_map"
 description: "Visualize BLE devices on a simple room map from MQTT scanner RSSI"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+  - armhf
+  - i386
 startup: services
 boot: auto
 init: false
