@@ -118,6 +118,16 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/settings")
+def settings():
+    return render_template("settings.html")
+
+
+@app.route("/devices")
+def devices():
+    return render_template("devices.html")
+
+
 @app.route("/map.jpg")
 def map_file():
     if MAP_FILE.exists():

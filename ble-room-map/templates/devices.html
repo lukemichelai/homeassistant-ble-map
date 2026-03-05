@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>BLE Room Map - Devices</title>
+  <style>
+    body { font-family:sans-serif; margin:16px; }
+    table { border-collapse: collapse; width: 100%; max-width: 1000px; }
+    th, td { border:1px solid #ddd; padding:8px; font-size:13px; }
+    th { background:#f5f5f5; }
+    input { width: 100%; }
+    button { padding:4px 8px; }
+    a { text-decoration:none; color:#2563eb; margin-right:8px; }
+  </style>
+</head>
+<body>
+  <div><a href="/">← Map</a><a href="/settings">Settings</a></div>
+  <h3>Tracked devices</h3>
+  <p>Set custom aliases for device_key entries. You can add or remove at any time.</p>
+
+  <table>
+    <thead>
+      <tr><th>device_key</th><th>raw_name</th><th>alias</th><th>action</th></tr>
+    </thead>
+    <tbody id="tb"></tbody>
+  </table>
+
+<script>
+const tb = document.getElementById('tb');
+let layout = { tracked_devices: {} };
+
+async function load(){
+  const data = await (await fetch('/api/state')).json();
+  layout = data.layout || layout;
+  const tracked = layout.tracked_devices || {};
+  tb.innerHTML='';
+  (data.devices||[]).forEach(d=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${d.device_key}</td>
+      <td>${d.raw_name||''}</td>
+      <td><input value="${(tracked[d.device_key]||'').replace(/"/g,'&quot;')}" /></td>
+      <td><button>Save</button> <button data-del="1">Remove</button></td>
+    `;
+    const input=tr.querySelector('input');
+    const [saveBtn,delBtn]=tr.querySelectorAll('button');
+    saveBtn.onclick=async()=>{
+      tracked[d.device_key]=input.value.trim();
+      layout.tracked_devices=tracked;
+      await fetch('/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tracked_devices:tracked})});
+      await load();
+    };
+    delBtn.onclick=async()=>{
+      delete tracked[d.device_key];
+      layout.tracked_devices=tracked;
+      await fetch('/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tracked_devices:tracked})});
+      await load();
+    };
+    tb.appendChild(tr);
+  });
+}
+load();
+setInterval(load, 3000);
+</script>
+</body>
+</html>

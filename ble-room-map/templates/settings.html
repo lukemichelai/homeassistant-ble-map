@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>BLE Room Map - Settings</title>
+  <style>
+    body { font-family:sans-serif; margin:16px; }
+    #map { position: relative; width: 100%; max-width: 900px; height: 420px; border: 1px solid #ccc; background: #f7f7f7 center/contain no-repeat; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+    .dot { position:absolute; width:12px; height:12px; background:#2563eb; border-radius:50%; transform:translate(-50%,-50%); }
+    .label { position:absolute; transform:translate(8px,-8px); font-size:12px; background:#fff; padding:2px 6px; border-radius:6px; }
+    a { text-decoration:none; color:#2563eb; }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <a href="/">← Map</a>
+    <a href="/devices">Devices</a>
+  </div>
+  <h3>Settings</h3>
+
+  <div class="row">
+    <input type="file" id="mapFile" accept="image/jpeg,image/png" />
+    <button id="uploadBtn">Upload map</button>
+  </div>
+
+  <div class="row">
+    <label>Width (m): <input id="mapWidth" type="number" step="0.1"></label>
+    <label>Height (m): <input id="mapHeight" type="number" step="0.1"></label>
+    <button id="saveLayoutBtn">Save size</button>
+  </div>
+
+  <div class="row">
+    <label>Scanner ID: <input id="scannerId" placeholder="rpi5-ble"></label>
+    <small>Click on map to place selected scanner.</small>
+  </div>
+
+  <div id="map"></div>
+
+<script>
+const map = document.getElementById('map');
+const mapFile = document.getElementById('mapFile');
+const uploadBtn = document.getElementById('uploadBtn');
+const mapWidthEl = document.getElementById('mapWidth');
+const mapHeightEl = document.getElementById('mapHeight');
+const saveLayoutBtn = document.getElementById('saveLayoutBtn');
+const scannerIdEl = document.getElementById('scannerId');
+
+let layout = { map_width: 10, map_height: 5, scanner_positions: {} };
+
+function toPixels(x,y){
+  const w=map.clientWidth, h=map.clientHeight;
+  return {left:(x/layout.map_width)*w, top:h-(y/layout.map_height)*h};
+}
+function toMeters(px,py){
+  const r=map.getBoundingClientRect();
+  const x=((px-r.left)/r.width)*layout.map_width;
+  const y=((r.bottom-py)/r.height)*layout.map_height;
+  return {x:Number(x.toFixed(2)), y:Number(y.toFixed(2))};
+}
+function renderScanners(){
+  map.innerHTML='';
+  Object.entries(layout.scanner_positions||{}).forEach(([id,pos])=>{
+    const p=toPixels(Number(pos.x||0),Number(pos.y||0));
+    const d=document.createElement('div'); d.className='dot'; d.style.left=p.left+'px'; d.style.top=p.top+'px'; map.appendChild(d);
+    const l=document.createElement('div'); l.className='label'; l.style.left=p.left+'px'; l.style.top=p.top+'px'; l.textContent=id; map.appendChild(l);
+  });
+}
+async function load(){
+  const data=await (await fetch('/api/state')).json();
+  layout=data.layout || layout;
+  mapWidthEl.value=layout.map_width;
+  mapHeightEl.value=layout.map_height;
+  map.style.backgroundImage=data.map_available?`url(/map.jpg?ts=${data.ts})`:'none';
+  renderScanners();
+}
+async function save(){
+  await fetch('/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(layout)});
+}
+map.addEventListener('click', async (ev)=>{
+  const id=(scannerIdEl.value||'').trim();
+  if(!id) return;
+  layout.scanner_positions[id]=toMeters(ev.clientX,ev.clientY);
+  await save();
+  await load();
+});
+uploadBtn.addEventListener('click', async ()=>{
+  const f=mapFile.files?.[0]; if(!f) return;
+  const fd=new FormData(); fd.append('file',f);
+  await fetch('/api/map',{method:'POST',body:fd});
+  await load();
+});
+saveLayoutBtn.addEventListener('click', async ()=>{
+  layout.map_width=Number(mapWidthEl.value||10);
+  layout.map_height=Number(mapHeightEl.value||5);
+  await save();
+  await load();
+});
+load();
+</script>
+</body>
+</html>
