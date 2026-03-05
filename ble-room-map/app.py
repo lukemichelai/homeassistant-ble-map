@@ -40,6 +40,7 @@ layout_state = {
     "map_width": 10.0,
     "map_height": 5.0,
     "scanner_positions": DEFAULT_SCANNERS,
+    "scanner_aliases": {},
     "tracked_devices": DEFAULT_TRACKED,
     "fixed_devices": {},
     "hidden_devices": [],
@@ -247,6 +248,8 @@ def save_layout():
         layout_state["map_height"] = float(data["map_height"])
     if "scanner_positions" in data and isinstance(data["scanner_positions"], dict):
         layout_state["scanner_positions"] = data["scanner_positions"]
+    if "scanner_aliases" in data and isinstance(data["scanner_aliases"], dict):
+        layout_state["scanner_aliases"] = data["scanner_aliases"]
     if "tracked_devices" in data and isinstance(data["tracked_devices"], dict):
         layout_state["tracked_devices"] = data["tracked_devices"]
     if "fixed_devices" in data and isinstance(data["fixed_devices"], dict):
@@ -308,6 +311,7 @@ def state():
         "map_available": MAP_FILE.exists(),
         "devices": devices,
         "fixed_devices": fixed,
+        "fixed_keys": [x.get("device_key") for x in fixed],
         "ts": now,
     })
 
