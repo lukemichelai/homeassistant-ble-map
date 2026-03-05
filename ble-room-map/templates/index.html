@@ -50,7 +50,24 @@ function upsert(id,cls,x,y,label,onClick){const p=px(x,y); let d=document.getEle
  }
  if(!l){l=document.createElement('div');l.id='l_'+id;l.className='label';map.appendChild(l)} l.style.left=p.l+'px'; l.style.top=p.t+'px'; l.textContent=label;
 }
-function renderCards(devices){cards.innerHTML='';devices.forEach(d=>{const c=document.createElement('div');c.className='card';let h=`<div class='v'>${d.name}</div><div class='k'>nearest: <span class='v'>${d.nearest_scanner||'-'}</span></div>`;Object.entries(d.scanners||{}).forEach(([sid,s])=>{h+=`<div class='k'>${sid}: RSSI <span class='v'>${s.rssi}</span> | dist ~ <span class='v'>${s.distance}m</span></div>`});c.innerHTML=h;cards.appendChild(c);});}
+function renderCards(devices){
+  cards.innerHTML='';
+  devices.forEach(d=>{
+    const c=document.createElement('div'); c.className='card';
+    let h=`<div class='v'>${d.name}</div>`;
+    h += `<div class='k'>nearest scanner</div><div class='v'>${d.nearest_scanner||'-'}</div>`;
+    h += `<div class='k' style='margin-top:6px'>Distance by scanner (from RSSI)</div>`;
+    Object.entries(d.scanners||{}).forEach(([sid,s])=>{
+      h += `<div class='k'>• ${sid}</div><div class='v'>RSSI ${s.rssi} | ~${s.distance} m</div>`;
+    });
+    h += `<div class='k' style='margin-top:6px'>Triangulated distance from estimated position</div>`;
+    Object.entries(d.triangulated_distances||{}).forEach(([sid,dist])=>{
+      h += `<div class='k'>• ${sid}</div><div class='v'>~${dist} m</div>`;
+    });
+    c.innerHTML=h;
+    cards.appendChild(c);
+  });
+}
 function cluster(devices){const bs=[],rad=30;devices.forEach(d=>{if(!d.xy)return;const p=px(d.xy.x,d.xy.y);let b=bs.find(b=>Math.hypot(b.p.l-p.l,b.p.t-p.t)<rad);if(!b){b={p,items:[]};bs.push(b)}b.items.push(d)});return bs;}
 function selectDevice(d){selectedKey=d.device_key; aliasInput.value=(layout.tracked_devices||{})[selectedKey]||d.name||''; selInfo.textContent=`${d.name} (${d.device_key})`}
 
@@ -109,7 +126,7 @@ async function tick(){
   const groups=cluster(currentDevices);
   groups.forEach((g,idx)=>{
     if(g.items.length===1 || expandClusters){
-      g.items.forEach(d=>{const n=d.nearest_scanner;const s=(d.scanners||{})[n]||{};upsert('m_'+d.device_key,'device',d.xy.x,d.xy.y,`📱 ${d.name} | ${n||'-'} RSSI ${s.rssi??'-'} | ~${s.distance??'-'}m`,()=>selectDevice(d));});
+      g.items.forEach(d=>{const n=d.nearest_scanner;const s=(d.scanners||{})[n]||{};upsert('m_'+d.device_key,'device',d.xy.x,d.xy.y,`📱 ${d.name}`,()=>selectDevice(d));});
     } else {
       const names=g.items.slice(0,3).map(x=>x.name).join(', ')+(g.items.length>3?' ...':'');
       const mx=(g.items.reduce((a,b)=>a+b.xy.x,0)/g.items.length), my=(g.items.reduce((a,b)=>a+b.xy.y,0)/g.items.length);

@@ -122,6 +122,10 @@ def estimate_xy(device_key: str):
     return {"x": round(sx / sw, 2), "y": round(sy / sw, 2)}
 
 
+def _euclidean(x1: float, y1: float, x2: float, y2: float) -> float:
+    return round(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5, 2)
+
+
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode("utf-8", errors="ignore"))
@@ -217,13 +221,23 @@ def state():
         except Exception:
             nearest = None
 
+        xy = estimate_xy(key)
+        tri = {}
+        if xy:
+            for sid, pos in (layout_state.get("scanner_positions", {}) or {}).items():
+                try:
+                    tri[sid] = _euclidean(float(xy["x"]), float(xy["y"]), float(pos.get("x", 0)), float(pos.get("y", 0)))
+                except Exception:
+                    pass
+
         devices.append({
             "device_key": key,
             "name": alias or name_index.get(key) or key,
             "raw_name": name_index.get(key) or "",
-            "xy": estimate_xy(key),
+            "xy": xy,
             "nearest_scanner": nearest,
             "scanners": recent,
+            "triangulated_distances": tri,
         })
     fixed = []
     for key, cfg in (layout_state.get("fixed_devices", {}) or {}).items():
