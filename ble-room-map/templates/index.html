@@ -37,6 +37,7 @@ const selInfo=document.getElementById('selInfo'); const aliasInput=document.getE
 const saveAliasBtn=document.getElementById('saveAliasBtn'); const fixBtn=document.getElementById('fixBtn'); const moveBtn=document.getElementById('moveBtn'); const unfixBtn=document.getElementById('unfixBtn');
 let layout={map_width:10,map_height:5,scanner_positions:{},tracked_devices:{},fixed_devices:{}}; let mapSet=false; let expandClusters=false;
 let currentDevices=[]; let selectedKey=null; let moveMode=false;
+let dragFixedKey=null;
 
 function px(x,y){const w=map.clientWidth,h=map.clientHeight;return{l:(x/layout.map_width)*w,t:h-(y/layout.map_height)*h}}
 function meters(clientX,clientY){const r=map.getBoundingClientRect();const x=((clientX-r.left)/r.width)*layout.map_width;const y=((r.bottom-clientY)/r.height)*layout.map_height;return{x:Number(x.toFixed(2)),y:Number(y.toFixed(2))}}
@@ -44,6 +45,9 @@ async function saveLayout(partial){await fetch('api/layout',{method:'POST',heade
 
 function upsert(id,cls,x,y,label,onClick){const p=px(x,y); let d=document.getElementById('d_'+id), l=document.getElementById('l_'+id);
  if(!d){d=document.createElement('div');d.id='d_'+id;map.appendChild(d)} d.className='dot '+cls; d.style.left=p.l+'px'; d.style.top=p.t+'px'; d.onclick=onClick||null;
+ if(cls.includes('fixed')){
+   d.onmousedown=(ev)=>{ dragFixedKey=id.replace('f_',''); ev.stopPropagation(); };
+ }
  if(!l){l=document.createElement('div');l.id='l_'+id;l.className='label';map.appendChild(l)} l.style.left=p.l+'px'; l.style.top=p.t+'px'; l.textContent=label;
 }
 function renderCards(devices){cards.innerHTML='';devices.forEach(d=>{const c=document.createElement('div');c.className='card';let h=`<div class='v'>${d.name}</div><div class='k'>nearest: <span class='v'>${d.nearest_scanner||'-'}</span></div>`;Object.entries(d.scanners||{}).forEach(([sid,s])=>{h+=`<div class='k'>${sid}: RSSI <span class='v'>${s.rssi}</span> | dist ~ <span class='v'>${s.distance}m</span></div>`});c.innerHTML=h;cards.appendChild(c);});}
@@ -60,6 +64,26 @@ map.addEventListener('click', async (ev)=>{
   await saveLayout({fixed_devices:fd});
   moveMode=false;
   await tick();
+});
+
+map.addEventListener('mousemove', (ev)=>{
+  if(!dragFixedKey) return;
+  const m=meters(ev.clientX,ev.clientY);
+  const fd=layout.fixed_devices||{};
+  if(!fd[dragFixedKey]) return;
+  fd[dragFixedKey].x=m.x; fd[dragFixedKey].y=m.y;
+  layout.fixed_devices=fd;
+  const id='f_'+dragFixedKey;
+  const p=px(m.x,m.y);
+  const d=document.getElementById('d_'+id), l=document.getElementById('l_'+id);
+  if(d){d.style.left=p.l+'px'; d.style.top=p.t+'px';}
+  if(l){l.style.left=p.l+'px'; l.style.top=p.t+'px';}
+});
+
+window.addEventListener('mouseup', async ()=>{
+  if(!dragFixedKey) return;
+  await saveLayout({fixed_devices:layout.fixed_devices||{}});
+  dragFixedKey=null;
 });
 
 saveAliasBtn.onclick=async()=>{
