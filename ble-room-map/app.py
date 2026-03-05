@@ -24,6 +24,7 @@ DATA_DIR = Path("/data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 MAP_FILE = DATA_DIR / "floor_map.jpg"
 STATE_FILE = DATA_DIR / "layout_state.json"
+HISTORY_FILE = DATA_DIR / "presence_history.json"
 
 try:
     DEFAULT_SCANNERS = json.loads(os.getenv("SCANNER_POSITIONS", "{}"))
@@ -52,6 +53,12 @@ if STATE_FILE.exists():
 # state
 latest = defaultdict(dict)  # device_key -> scanner_id -> {rssi, ts, raw}
 name_index = {}
+presence_history = {}
+if HISTORY_FILE.exists():
+    try:
+        presence_history.update(json.loads(HISTORY_FILE.read_text()))
+    except Exception:
+        pass
 
 
 def persist_layout():
@@ -127,6 +134,38 @@ def _euclidean(x1: float, y1: float, x2: float, y2: float) -> float:
     return round(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5, 2)
 
 
+def _mark_presence(device_key: str, ts: int):
+    day = time.strftime("%Y-%m-%d", time.localtime(ts))
+    hour = int(time.strftime("%H", time.localtime(ts)))
+    rec = presence_history.get(device_key) or {"first_seen": ts, "last_seen": ts, "days": {}}
+    rec["first_seen"] = min(int(rec.get("first_seen", ts)), ts)
+    rec["last_seen"] = max(int(rec.get("last_seen", ts)), ts)
+    days = rec.get("days", {})
+    row = days.get(day) or [0] * 24
+    row[hour] = 1
+    days[day] = row
+    rec["days"] = days
+    presence_history[device_key] = rec
+
+
+def _presence_views(device_key: str):
+    rec = presence_history.get(device_key) or {}
+    days = rec.get("days", {})
+    today = time.strftime("%Y-%m-%d")
+    hourly = days.get(today) or [0] * 24
+    # last 14 days daily
+    daily = []
+    for i in range(13, -1, -1):
+        d = time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400))
+        vals = days.get(d) or [0] * 24
+        daily.append({"day": d, "present": 1 if any(vals) else 0})
+    return {
+        "first_seen": int(rec.get("first_seen", 0)) if rec else 0,
+        "hourly_presence": hourly,
+        "daily_presence": daily,
+    }
+
+
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode("utf-8", errors="ignore"))
@@ -146,8 +185,16 @@ def on_message(client, userdata, msg):
         "ts": ts,
         "raw": payload,
     }
+    _mark_presence(key, int(ts))
     if payload.get("name"):
         name_index[key] = payload.get("name")
+
+    # lightweight persistence
+    if int(ts) % 15 == 0:
+        try:
+            HISTORY_FILE.write_text(json.dumps(presence_history, ensure_ascii=False))
+        except Exception:
+            pass
 
 
 def mqtt_worker():
@@ -202,6 +249,8 @@ def save_layout():
         layout_state["scanner_positions"] = data["scanner_positions"]
     if "tracked_devices" in data and isinstance(data["tracked_devices"], dict):
         layout_state["tracked_devices"] = data["tracked_devices"]
+    if "fixed_devices" in data and isinstance(data["fixed_devices"], dict):
+        layout_state["fixed_devices"] = data["fixed_devices"]
     if "hidden_devices" in data and isinstance(data["hidden_devices"], list):
         layout_state["hidden_devices"] = data["hidden_devices"]
     persist_layout()
@@ -234,6 +283,7 @@ def state():
                 except Exception:
                     pass
 
+        pv = _presence_views(key)
         device_obj = {
             "device_key": key,
             "name": alias or name_index.get(key) or key,
@@ -242,6 +292,9 @@ def state():
             "nearest_scanner": nearest,
             "scanners": recent,
             "triangulated_distances": tri,
+            "first_seen": pv.get("first_seen", 0),
+            "hourly_presence": pv.get("hourly_presence", [0] * 24),
+            "daily_presence": pv.get("daily_presence", []),
         }
         if key in hidden:
             continue

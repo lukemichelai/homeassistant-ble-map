@@ -1,16 +1,18 @@
 <!doctype html>
 <html><head><meta charset="utf-8" /><title>BLE Room Map</title>
 <style>
-body{font-family:sans-serif;margin:0;display:grid;grid-template-columns:1fr 360px;height:100vh}
+body{font-family:sans-serif;margin:0;display:grid;grid-template-columns:1fr 380px;height:100vh}
 #main{display:flex;flex-direction:column;min-width:0}
 #top{padding:10px 14px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between}
 #map{position:relative;flex:1;background:#f7f7f7 center/contain no-repeat;overflow:hidden}
 #side{border-left:1px solid #ddd;padding:10px;overflow:auto}
 .dot{position:absolute;width:14px;height:14px;border-radius:50%;transform:translate(-50%,-50%);transition:left .5s linear,top .5s linear;cursor:pointer}
 .scanner{background:#2563eb}.device{background:#ef4444}.fixed{background:#10b981}.cluster{background:#f59e0b;width:22px;height:22px}
-.label{position:absolute;transform:translate(10px,-8px);font-size:12px;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:6px;transition:left .5s linear,top .5s linear;white-space:nowrap}
-a{text-decoration:none;color:#2563eb;margin-left:10px}.card{border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px}
-.k{color:#555}.v{font-weight:600}.panel{border:1px solid #ddd;border-radius:8px;padding:8px;margin-bottom:10px}
+.label{position:absolute;transform:translate(10px,-8px);font-size:12px;background:rgba(0,0,0,.9);color:#fff;padding:2px 6px;border-radius:6px;transition:left .5s linear,top .5s linear;white-space:nowrap;cursor:pointer}
+a{text-decoration:none;color:#2563eb;margin-left:10px}.panel{border:1px solid #ddd;border-radius:8px;padding:8px;margin-bottom:10px}
+.k{color:#555}.v{font-weight:600}.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.spark{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-top:4px}.bar{height:10px;background:#111}.bar.on{background:#16a34a}
+.spark14{display:grid;grid-template-columns:repeat(14,1fr);gap:2px;margin-top:4px}.day{height:12px;background:#111}.day.on{background:#16a34a}
 </style></head><body>
 <div id="main">
   <div id="top"><strong>BLE Room Map</strong><div><a href="devices">Devices</a><a href="settings">Settings</a></div></div>
@@ -18,122 +20,95 @@ a{text-decoration:none;color:#2563eb;margin-left:10px}.card{border:1px solid #e5
 </div>
 <div id="side">
   <div class="panel">
-    <h4 style="margin:4px 0">Selected device</h4>
-    <div id="selInfo" class="k">Click a device on map</div>
+    <h4 style="margin:4px 0">Device detail</h4>
+    <div id="selInfo" class="k">Click a device label or dot</div>
     <label>Alias <input id="aliasInput" style="width:100%"></label>
-    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+    <div class="row" style="margin-top:8px">
       <button id="saveAliasBtn">Save alias</button>
-      <button id="fixBtn">Fix at current point</button>
-      <button id="moveBtn">Move fixed (click map)</button>
+      <button id="hideBtn">Hide</button>
+      <button id="unhideBtn">Unhide</button>
+      <button id="fixBtn">Fix here</button>
       <button id="unfixBtn">Unfix</button>
     </div>
+    <div id="detailBody" style="margin-top:8px;font-size:12px"></div>
   </div>
-  <h3 style="margin-top:4px">Live device info</h3>
-  <div id="cards"></div>
 </div>
 <script>
-const map=document.getElementById('map'); const cards=document.getElementById('cards');
-const selInfo=document.getElementById('selInfo'); const aliasInput=document.getElementById('aliasInput');
-const saveAliasBtn=document.getElementById('saveAliasBtn'); const fixBtn=document.getElementById('fixBtn'); const moveBtn=document.getElementById('moveBtn'); const unfixBtn=document.getElementById('unfixBtn');
-let layout={map_width:10,map_height:5,scanner_positions:{},tracked_devices:{},fixed_devices:{}}; let mapSet=false; let expandClusters=false;
-let currentDevices=[]; let selectedKey=null; let moveMode=false;
-let dragFixedKey=null;
+const map=document.getElementById('map');
+const selInfo=document.getElementById('selInfo'); const aliasInput=document.getElementById('aliasInput'); const detailBody=document.getElementById('detailBody');
+const saveAliasBtn=document.getElementById('saveAliasBtn'); const hideBtn=document.getElementById('hideBtn'); const unhideBtn=document.getElementById('unhideBtn'); const fixBtn=document.getElementById('fixBtn'); const unfixBtn=document.getElementById('unfixBtn');
+let layout={map_width:10,map_height:5,scanner_positions:{},tracked_devices:{},fixed_devices:{},hidden_devices:[]};
+let mapSet=false, expandClusters=false, currentDevices=[], selectedKey=null, draggingKey=null;
 
 function px(x,y){const w=map.clientWidth,h=map.clientHeight;return{l:(x/layout.map_width)*w,t:h-(y/layout.map_height)*h}}
 function meters(clientX,clientY){const r=map.getBoundingClientRect();const x=((clientX-r.left)/r.width)*layout.map_width;const y=((r.bottom-clientY)/r.height)*layout.map_height;return{x:Number(x.toFixed(2)),y:Number(y.toFixed(2))}}
-async function saveLayout(partial){await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(partial)});} 
+async function saveLayout(partial){await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(partial)})}
 
-function upsert(id,cls,x,y,label,onClick){const p=px(x,y); let d=document.getElementById('d_'+id), l=document.getElementById('l_'+id);
- if(!d){d=document.createElement('div');d.id='d_'+id;map.appendChild(d)} d.className='dot '+cls; d.style.left=p.l+'px'; d.style.top=p.t+'px'; d.onclick=onClick||null;
- if(cls.includes('fixed')){
-   d.onmousedown=(ev)=>{ dragFixedKey=id.replace('f_',''); ev.stopPropagation(); };
- }
- if(!l){l=document.createElement('div');l.id='l_'+id;l.className='label';map.appendChild(l)} l.style.left=p.l+'px'; l.style.top=p.t+'px'; l.textContent=label;
+function upsert(id,cls,x,y,label,onSelect){
+  const p=px(x,y); let d=document.getElementById('d_'+id), l=document.getElementById('l_'+id);
+  if(!d){d=document.createElement('div');d.id='d_'+id;map.appendChild(d)}
+  d.className='dot '+cls; d.style.left=p.l+'px'; d.style.top=p.t+'px';
+  if(cls==='device' || cls==='fixed'){
+    const key=id.replace(/^m_|^f_/,'');
+    d.onmousedown=(ev)=>{draggingKey=key; ev.stopPropagation(); onSelect&&onSelect();};
+  }
+  d.onclick=onSelect||null;
+  if(!l){l=document.createElement('div');l.id='l_'+id;l.className='label';map.appendChild(l)}
+  l.style.left=p.l+'px'; l.style.top=p.t+'px'; l.textContent=label; l.onclick=onSelect||null;
 }
-function renderCards(devices){
-  cards.innerHTML='';
-  devices.forEach(d=>{
-    const c=document.createElement('div'); c.className='card';
-    let h=`<div class='v'>${d.name}</div>`;
-    h += `<div class='k'>nearest scanner</div><div class='v'>${d.nearest_scanner||'-'}</div>`;
-    h += `<div class='k' style='margin-top:6px'>Distance by scanner (from RSSI)</div>`;
-    Object.entries(d.scanners||{}).forEach(([sid,s])=>{
-      h += `<div class='k'>• ${sid}</div><div class='v'>RSSI ${s.rssi} | ~${s.distance} m</div>`;
-    });
-    h += `<div class='k' style='margin-top:6px'>Triangulated distance from estimated position</div>`;
-    Object.entries(d.triangulated_distances||{}).forEach(([sid,dist])=>{
-      h += `<div class='k'>• ${sid}</div><div class='v'>~${dist} m</div>`;
-    });
-    c.innerHTML=h;
-    cards.appendChild(c);
-  });
-}
+
 function cluster(devices){const bs=[],rad=30;devices.forEach(d=>{if(!d.xy)return;const p=px(d.xy.x,d.xy.y);let b=bs.find(b=>Math.hypot(b.p.l-p.l,b.p.t-p.t)<rad);if(!b){b={p,items:[]};bs.push(b)}b.items.push(d)});return bs;}
-function selectDevice(d){selectedKey=d.device_key; aliasInput.value=(layout.tracked_devices||{})[selectedKey]||d.name||''; selInfo.textContent=`${d.name} (${d.device_key})`}
+function selectDevice(d){selectedKey=d.device_key; aliasInput.value=(layout.tracked_devices||{})[selectedKey]||d.name||''; selInfo.textContent=`${d.name} (${d.device_key})`; renderDetail(d)}
+function fmtTs(ts){if(!ts) return '-'; try{return new Date(ts*1000).toLocaleString()}catch{return '-'}}
+function renderPresenceHourly(arr){arr=arr||[]; return `<div class='spark'>${Array.from({length:24}).map((_,i)=>`<div class='bar ${arr[i]?"on":""}' title='h${i}: ${arr[i]?"present":"absent"}'></div>`).join('')}</div>`}
+function renderPresenceDaily(arr){arr=arr||[]; return `<div class='spark14'>${arr.map(d=>`<div class='day ${d.present?"on":""}' title='${d.day}: ${d.present?"present":"absent"}'></div>`).join('')}</div>`}
+function renderDetail(d){
+  if(!d){detailBody.innerHTML=''; return}
+  let html=`<div><span class='k'>First seen:</span> <span class='v'>${fmtTs(d.first_seen)}</span></div>`;
+  html += `<div class='k' style='margin-top:6px'>Distance by scanner (RSSI)</div>`;
+  Object.entries(d.scanners||{}).forEach(([sid,s])=>{html += `<div>• <span class='v'>${sid}</span> — RSSI ${s.rssi}, ~${s.distance}m</div>`});
+  html += `<div class='k' style='margin-top:6px'>Triangulated distance</div>`;
+  Object.entries(d.triangulated_distances||{}).forEach(([sid,dist])=>{html += `<div>• <span class='v'>${sid}</span> — ~${dist}m</div>`});
+  html += `<div class='k' style='margin-top:8px'>Hourly presence (today)</div>${renderPresenceHourly(d.hourly_presence)}`;
+  html += `<div class='k' style='margin-top:8px'>Daily presence (last 14d)</div>${renderPresenceDaily(d.daily_presence)}`;
+  detailBody.innerHTML=html;
+}
 
-map.addEventListener('click', async (ev)=>{
-  if(!moveMode || !selectedKey) return;
+map.addEventListener('mousemove',(ev)=>{
+  if(!draggingKey) return;
   const m=meters(ev.clientX,ev.clientY);
   const fd=layout.fixed_devices||{};
-  const name=(layout.tracked_devices||{})[selectedKey] || (currentDevices.find(x=>x.device_key===selectedKey)?.name) || selectedKey;
-  fd[selectedKey]={name,x:m.x,y:m.y};
-  layout.fixed_devices=fd;
-  await saveLayout({fixed_devices:fd});
-  moveMode=false;
-  await tick();
+  const name=(layout.tracked_devices||{})[draggingKey] || (currentDevices.find(x=>x.device_key===draggingKey)?.name) || draggingKey;
+  fd[draggingKey]={name,x:m.x,y:m.y}; layout.fixed_devices=fd;
+  const p=px(m.x,m.y); const d=document.getElementById('d_f_'+draggingKey), l=document.getElementById('l_f_'+draggingKey);
+  if(d){d.style.left=p.l+'px';d.style.top=p.t+'px';d.className='dot fixed'}
+  if(l){l.style.left=p.l+'px';l.style.top=p.t+'px';l.textContent=`📍 ${name}`}
 });
+window.addEventListener('mouseup', async ()=>{if(!draggingKey) return; await saveLayout({fixed_devices:layout.fixed_devices||{}}); draggingKey=null; await tick();});
 
-map.addEventListener('mousemove', (ev)=>{
-  if(!dragFixedKey) return;
-  const m=meters(ev.clientX,ev.clientY);
-  const fd=layout.fixed_devices||{};
-  if(!fd[dragFixedKey]) return;
-  fd[dragFixedKey].x=m.x; fd[dragFixedKey].y=m.y;
-  layout.fixed_devices=fd;
-  const id='f_'+dragFixedKey;
-  const p=px(m.x,m.y);
-  const d=document.getElementById('d_'+id), l=document.getElementById('l_'+id);
-  if(d){d.style.left=p.l+'px'; d.style.top=p.t+'px';}
-  if(l){l.style.left=p.l+'px'; l.style.top=p.t+'px';}
-});
-
-window.addEventListener('mouseup', async ()=>{
-  if(!dragFixedKey) return;
-  await saveLayout({fixed_devices:layout.fixed_devices||{}});
-  dragFixedKey=null;
-});
-
-saveAliasBtn.onclick=async()=>{
-  if(!selectedKey) return;
-  const t=layout.tracked_devices||{}; t[selectedKey]=aliasInput.value.trim(); layout.tracked_devices=t;
-  await saveLayout({tracked_devices:t}); await tick();
-};
-fixBtn.onclick=async()=>{
-  if(!selectedKey) return;
-  const d=currentDevices.find(x=>x.device_key===selectedKey); if(!d||!d.xy) return;
-  const fd=layout.fixed_devices||{}; fd[selectedKey]={name:(layout.tracked_devices||{})[selectedKey]||d.name||selectedKey,x:d.xy.x,y:d.xy.y}; layout.fixed_devices=fd;
-  await saveLayout({fixed_devices:fd}); await tick();
-};
-moveBtn.onclick=()=>{if(selectedKey){moveMode=true; selInfo.textContent += ' | click map to place'}};
-unfixBtn.onclick=async()=>{if(!selectedKey) return; const fd=layout.fixed_devices||{}; delete fd[selectedKey]; layout.fixed_devices=fd; await saveLayout({fixed_devices:fd}); await tick();};
+saveAliasBtn.onclick=async()=>{if(!selectedKey)return; const t=layout.tracked_devices||{}; t[selectedKey]=aliasInput.value.trim(); layout.tracked_devices=t; await saveLayout({tracked_devices:t}); await tick();};
+hideBtn.onclick=async()=>{if(!selectedKey)return; const h=new Set(layout.hidden_devices||[]); h.add(selectedKey); layout.hidden_devices=[...h]; await saveLayout({hidden_devices:layout.hidden_devices}); selectedKey=null; await tick();};
+unhideBtn.onclick=async()=>{if(!selectedKey)return; const h=new Set(layout.hidden_devices||[]); h.delete(selectedKey); layout.hidden_devices=[...h]; await saveLayout({hidden_devices:layout.hidden_devices}); await tick();};
+fixBtn.onclick=async()=>{if(!selectedKey)return; const d=currentDevices.find(x=>x.device_key===selectedKey); if(!d||!d.xy)return; const fd=layout.fixed_devices||{}; fd[selectedKey]={name:(layout.tracked_devices||{})[selectedKey]||d.name||selectedKey,x:d.xy.x,y:d.xy.y}; layout.fixed_devices=fd; await saveLayout({fixed_devices:fd}); await tick();};
+unfixBtn.onclick=async()=>{if(!selectedKey)return; const fd=layout.fixed_devices||{}; delete fd[selectedKey]; layout.fixed_devices=fd; await saveLayout({fixed_devices:fd}); await tick();};
 
 async function tick(){
   const data=await (await fetch('api/state')).json(); layout=data.layout||layout; currentDevices=data.devices||[];
   if(!mapSet){map.style.backgroundImage=data.map_available?`url(map.jpg?ts=${data.ts})`:'none'; mapSet=true;}
   [...map.querySelectorAll('.dot,.label')].forEach(el=>el.remove());
   Object.entries(layout.scanner_positions||{}).forEach(([id,pos])=>upsert('s_'+id,'scanner',Number(pos.x||0),Number(pos.y||0),`📡 ${id}`));
-  (data.fixed_devices||[]).forEach(d=>upsert('f_'+d.device_key,'fixed',Number(d.xy.x||0),Number(d.xy.y||0),`📍 ${d.name}`));
+  (data.fixed_devices||[]).forEach(d=>upsert('f_'+d.device_key,'fixed',Number(d.xy.x||0),Number(d.xy.y||0),`📍 ${d.name}`,()=>selectDevice({device_key:d.device_key,name:d.name,...(currentDevices.find(x=>x.device_key===d.device_key)||{})})));
   const groups=cluster(currentDevices);
   groups.forEach((g,idx)=>{
     if(g.items.length===1 || expandClusters){
-      g.items.forEach(d=>{const n=d.nearest_scanner;const s=(d.scanners||{})[n]||{};upsert('m_'+d.device_key,'device',d.xy.x,d.xy.y,`📱 ${d.name}`,()=>selectDevice(d));});
+      g.items.forEach(d=>upsert('m_'+d.device_key,'device',d.xy.x,d.xy.y,`${d.name}`,()=>selectDevice(d)));
     } else {
       const names=g.items.slice(0,3).map(x=>x.name).join(', ')+(g.items.length>3?' ...':'');
       const mx=(g.items.reduce((a,b)=>a+b.xy.x,0)/g.items.length), my=(g.items.reduce((a,b)=>a+b.xy.y,0)/g.items.length);
-      upsert('c_'+idx,'cluster',mx,my,`🧩 ${g.items.length} devices (${names})`,()=>{expandClusters=true; tick();});
+      upsert('c_'+idx,'cluster',mx,my,`🧩 ${g.items.length} devices`,()=>{expandClusters=true; tick();});
     }
   });
-  renderCards(currentDevices);
+  if(selectedKey){ renderDetail(currentDevices.find(d=>d.device_key===selectedKey)); }
 }
 setInterval(tick,1000); tick();
 </script></body></html>
