@@ -18,8 +18,8 @@
   <div id="top">
     <strong>BLE Room Map</strong>
     <div>
-      <a href="/devices">Devices</a>
-      <a href="/settings">Settings</a>
+      <a href="devices">Devices</a>
+      <a href="settings">Settings</a>
     </div>
   </div>
   <div id="map"></div>
@@ -53,10 +53,10 @@
     }
 
     async function tick() {
-      const res = await fetch('/api/state');
+      const res = await fetch('api/state');
       const data = await res.json();
       layout = data.layout || layout;
-      map.style.backgroundImage = data.map_available ? `url(/map.jpg?ts=${data.ts})` : 'none';
+      map.style.backgroundImage = data.map_available ? `url(map.jpg?ts=${data.ts})` : 'none';
       clearMap();
 
       Object.entries(layout.scanner_positions || {}).forEach(([id, pos]) => {

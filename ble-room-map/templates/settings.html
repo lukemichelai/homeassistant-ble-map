@@ -14,8 +14,8 @@
 </head>
 <body>
   <div class="row">
-    <a href="/">← Map</a>
-    <a href="/devices">Devices</a>
+    <a href="./">← Map</a>
+    <a href="devices">Devices</a>
   </div>
   <h3>Settings</h3>
 
@@ -67,15 +67,15 @@ function renderScanners(){
   });
 }
 async function load(){
-  const data=await (await fetch('/api/state')).json();
+  const data=await (await fetch('api/state')).json();
   layout=data.layout || layout;
   mapWidthEl.value=layout.map_width;
   mapHeightEl.value=layout.map_height;
-  map.style.backgroundImage=data.map_available?`url(/map.jpg?ts=${data.ts})`:'none';
+  map.style.backgroundImage=data.map_available?`url(map.jpg?ts=${data.ts})`:'none';
   renderScanners();
 }
 async function save(){
-  await fetch('/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(layout)});
+  await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(layout)});
 }
 map.addEventListener('click', async (ev)=>{
   const id=(scannerIdEl.value||'').trim();
@@ -87,7 +87,7 @@ map.addEventListener('click', async (ev)=>{
 uploadBtn.addEventListener('click', async ()=>{
   const f=mapFile.files?.[0]; if(!f) return;
   const fd=new FormData(); fd.append('file',f);
-  await fetch('/api/map',{method:'POST',body:fd});
+  await fetch('api/map',{method:'POST',body:fd});
   await load();
 });
 saveLayoutBtn.addEventListener('click', async ()=>{

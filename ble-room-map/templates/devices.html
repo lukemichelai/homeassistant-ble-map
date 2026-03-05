@@ -14,7 +14,7 @@
   </style>
 </head>
 <body>
-  <div><a href="/">← Map</a><a href="/settings">Settings</a></div>
+  <div><a href="./">← Map</a><a href="settings">Settings</a></div>
   <h3>Tracked devices</h3>
   <p>Set custom aliases for device_key entries. You can add or remove at any time.</p>
 
@@ -30,7 +30,7 @@ const tb = document.getElementById('tb');
 let layout = { tracked_devices: {} };
 
 async function load(){
-  const data = await (await fetch('/api/state')).json();
+  const data = await (await fetch('api/state')).json();
   layout = data.layout || layout;
   const tracked = layout.tracked_devices || {};
   tb.innerHTML='';
@@ -47,13 +47,13 @@ async function load(){
     saveBtn.onclick=async()=>{
       tracked[d.device_key]=input.value.trim();
       layout.tracked_devices=tracked;
-      await fetch('/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tracked_devices:tracked})});
+      await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tracked_devices:tracked})});
       await load();
     };
     delBtn.onclick=async()=>{
       delete tracked[d.device_key];
       layout.tracked_devices=tracked;
-      await fetch('/api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tracked_devices:tracked})});
+      await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tracked_devices:tracked})});
       await load();
     };
     tb.appendChild(tr);
