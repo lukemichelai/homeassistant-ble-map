@@ -22,18 +22,20 @@ ports_description:
 options:
   mqtt_host: "core-mosquitto"
   mqtt_port: 1883
-  mqtt_user: "mqtt_ble"
+  mqtt_user: ""
   mqtt_pass: ""
   topic_prefix: "ble_scanner"
-  scanner_positions_json: '{"rpi5-ble":{"x":1.0,"y":1.0},"macmini-bedroom":{"x":8.0,"y":1.0}}'
+  scanner_positions_json: '{}'
+  tracked_devices_json: '{}'
   tx_power: -59
   n_factor: 2.2
 schema:
   mqtt_host: str
   mqtt_port: int
-  mqtt_user: str
+  mqtt_user: str?
   mqtt_pass: password?
   topic_prefix: str
   scanner_positions_json: str
+  tracked_devices_json: str
   tx_power: int
   n_factor: float

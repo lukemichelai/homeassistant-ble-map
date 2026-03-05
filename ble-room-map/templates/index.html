@@ -31,8 +31,14 @@
     </div>
 
     <div class="row">
-      <label>Scanner ID: <input id="scannerId" placeholder="rpi5-ble"></label>
+      <label>Scanner ID: <input id="scannerId" placeholder="scanner id"></label>
       <small>Clicca sulla mappa per posizionare lo scanner selezionato.</small>
+    </div>
+
+    <div class="row">
+      <label style="width:100%">Tracked devices map (JSON: {"device_key_or_name":"Alias"})</label>
+      <textarea id="trackedJson" style="width:100%;max-width:900px;height:80px"></textarea>
+      <button id="saveTrackedBtn">Save tracked aliases</button>
     </div>
   </div>
 
@@ -49,8 +55,10 @@
     const mapWidthEl = document.getElementById('mapWidth');
     const mapHeightEl = document.getElementById('mapHeight');
     const scannerIdEl = document.getElementById('scannerId');
+    const trackedJsonEl = document.getElementById('trackedJson');
+    const saveTrackedBtn = document.getElementById('saveTrackedBtn');
 
-    let layout = { map_width: 10, map_height: 5, scanner_positions: {} };
+    let layout = { map_width: 10, map_height: 5, scanner_positions: {}, tracked_devices: {} };
 
     function toPixels(x, y) {
       const w = map.clientWidth;
@@ -119,6 +127,17 @@
       await tick();
     });
 
+    saveTrackedBtn.addEventListener('click', async () => {
+      try {
+        layout.tracked_devices = JSON.parse(trackedJsonEl.value || '{}');
+      } catch (e) {
+        alert('Invalid tracked JSON');
+        return;
+      }
+      await saveLayout();
+      await tick();
+    });
+
     async function tick() {
       const res = await fetch('/api/state');
       const data = await res.json();
@@ -126,6 +145,7 @@
       layout = data.layout || layout;
       mapWidthEl.value = layout.map_width;
       mapHeightEl.value = layout.map_height;
+      trackedJsonEl.value = JSON.stringify(layout.tracked_devices || {}, null, 2);
 
       map.style.backgroundImage = data.map_available ? 'url(/map.jpg)' : 'none';
       clearMap();

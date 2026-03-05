@@ -7,6 +7,7 @@ export MQTT_USER="$(bashio::config 'mqtt_user')"
 export MQTT_PASS="$(bashio::config 'mqtt_pass')"
 export TOPIC_PREFIX="$(bashio::config 'topic_prefix')"
 export SCANNER_POSITIONS="$(bashio::config 'scanner_positions_json')"
+export TRACKED_DEVICES="$(bashio::config 'tracked_devices_json')"
 export TX_POWER="$(bashio::config 'tx_power')"
 export N_FACTOR="$(bashio::config 'n_factor')"
 

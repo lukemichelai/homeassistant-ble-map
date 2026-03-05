@@ -28,10 +28,16 @@ try:
 except Exception:
     DEFAULT_SCANNERS = {}
 
+try:
+    DEFAULT_TRACKED = json.loads(os.getenv("TRACKED_DEVICES", "{}"))
+except Exception:
+    DEFAULT_TRACKED = {}
+
 layout_state = {
     "map_width": 10.0,
     "map_height": 5.0,
     "scanner_positions": DEFAULT_SCANNERS,
+    "tracked_devices": DEFAULT_TRACKED,
 }
 if STATE_FILE.exists():
     try:
@@ -137,6 +143,8 @@ def save_layout():
         layout_state["map_height"] = float(data["map_height"])
     if "scanner_positions" in data and isinstance(data["scanner_positions"], dict):
         layout_state["scanner_positions"] = data["scanner_positions"]
+    if "tracked_devices" in data and isinstance(data["tracked_devices"], dict):
+        layout_state["tracked_devices"] = data["tracked_devices"]
     persist_layout()
     return jsonify({"ok": True, "layout": layout_state})
 
@@ -149,9 +157,12 @@ def state():
         recent = {k: v for k, v in scanners.items() if now - int(v.get("ts", now)) < 90}
         if not recent:
             continue
+        tracked = layout_state.get("tracked_devices", {})
+        alias = tracked.get(key) or tracked.get((name_index.get(key) or "").strip())
         devices.append({
             "device_key": key,
-            "name": name_index.get(key) or key,
+            "name": alias or name_index.get(key) or key,
+            "raw_name": name_index.get(key) or "",
             "xy": estimate_xy(key),
             "scanners": recent,
         })

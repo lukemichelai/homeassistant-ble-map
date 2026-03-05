@@ -1,8 +1,8 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.20
+ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache py3-pip
-RUN pip install --no-cache-dir flask paho-mqtt
+RUN apk add --no-cache python3 py3-pip
+RUN pip3 install --no-cache-dir flask paho-mqtt
 
 WORKDIR /app
 COPY run.sh /run.sh
