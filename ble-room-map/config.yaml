@@ -1,5 +1,5 @@
 name: "BLE Room Map"
-version: "0.1.6"
+version: "0.1.7"
 slug: "ble_room_map"
 description: "Visualize BLE devices on a simple room map from MQTT scanner RSSI"
 arch:

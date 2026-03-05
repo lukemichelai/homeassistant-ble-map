@@ -1,4 +1,6 @@
+import hashlib
 import json
+import math
 import os
 import threading
 import time
@@ -83,13 +85,26 @@ def estimate_xy(device_key: str):
     if not anchors:
         return None
 
+    # single-anchor fallback: place on radius ring with deterministic angle
+    # (not true triangulation, but better visual than stacking all devices on scanner dot)
+    if len(anchors) == 1:
+        a = anchors[0]
+        h = hashlib.sha1(device_key.encode("utf-8")).hexdigest()
+        angle = (int(h[:8], 16) % 360) * (math.pi / 180.0)
+        r = min(max(a["d"], 0.4), 6.0)
+        x = a["x"] + r * math.cos(angle)
+        y = a["y"] + r * math.sin(angle)
+        # clamp within map bounds
+        x = min(max(0.0, x), float(layout_state.get("map_width", 10.0)))
+        y = min(max(0.0, y), float(layout_state.get("map_height", 5.0)))
+        return {"x": round(x, 2), "y": round(y, 2)}
+
     # two-anchor interpolation on the segment (stable and intuitive)
     if len(anchors) == 2:
         a, b = anchors[0], anchors[1]
         total = a["d"] + b["d"]
         if total <= 0:
             return {"x": round((a["x"] + b["x"]) / 2, 2), "y": round((a["y"] + b["y"]) / 2, 2)}
-        # nearer to anchor with smaller distance
         t = b["d"] / total
         x = a["x"] + (b["x"] - a["x"]) * t
         y = a["y"] + (b["y"] - a["y"]) * t
