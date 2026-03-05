@@ -7,7 +7,9 @@
     body { font-family:sans-serif; margin:16px; }
     #map { position: relative; width: 100%; max-width: 900px; height: 420px; border: 1px solid #ccc; background: #f7f7f7 center/contain no-repeat; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-    .dot { position:absolute; width:12px; height:12px; background:#2563eb; border-radius:50%; transform:translate(-50%,-50%); }
+    .dot { position:absolute; width:12px; height:12px; border-radius:50%; transform:translate(-50%,-50%); }
+    .scanner { background:#2563eb; }
+    .fixed { background:#10b981; }
     .label { position:absolute; transform:translate(8px,-8px); font-size:12px; background:#fff; padding:2px 6px; border-radius:6px; }
     a { text-decoration:none; color:#2563eb; }
   </style>
@@ -32,7 +34,13 @@
 
   <div class="row">
     <label>Scanner ID: <input id="scannerId" placeholder="rpi5-ble"></label>
-    <small>Click on map to place selected scanner.</small>
+    <small>Click map to place selected scanner.</small>
+  </div>
+
+  <div class="row">
+    <label>Fixed device: <select id="fixedDevice"></select></label>
+    <small>Select a discovered device and click map to pin it.</small>
+    <button id="unpinBtn">Unpin selected</button>
   </div>
 
   <div id="map"></div>
@@ -45,8 +53,11 @@ const mapWidthEl = document.getElementById('mapWidth');
 const mapHeightEl = document.getElementById('mapHeight');
 const saveLayoutBtn = document.getElementById('saveLayoutBtn');
 const scannerIdEl = document.getElementById('scannerId');
+const fixedDeviceEl = document.getElementById('fixedDevice');
+const unpinBtn = document.getElementById('unpinBtn');
 
-let layout = { map_width: 10, map_height: 5, scanner_positions: {} };
+let layout = { map_width: 10, map_height: 5, scanner_positions: {}, fixed_devices: {} };
+let devices = [];
 
 function toPixels(x,y){
   const w=map.clientWidth, h=map.clientHeight;
@@ -58,30 +69,55 @@ function toMeters(px,py){
   const y=((r.bottom-py)/r.height)*layout.map_height;
   return {x:Number(x.toFixed(2)), y:Number(y.toFixed(2))};
 }
-function renderScanners(){
+function drawDot(cls,label,x,y){
+  const p=toPixels(x,y);
+  const d=document.createElement('div'); d.className='dot '+cls; d.style.left=p.left+'px'; d.style.top=p.top+'px';
+  const l=document.createElement('div'); l.className='label'; l.style.left=p.left+'px'; l.style.top=p.top+'px'; l.textContent=label;
+  map.appendChild(d); map.appendChild(l);
+}
+function render(){
   map.innerHTML='';
-  Object.entries(layout.scanner_positions||{}).forEach(([id,pos])=>{
-    const p=toPixels(Number(pos.x||0),Number(pos.y||0));
-    const d=document.createElement('div'); d.className='dot'; d.style.left=p.left+'px'; d.style.top=p.top+'px'; map.appendChild(d);
-    const l=document.createElement('div'); l.className='label'; l.style.left=p.left+'px'; l.style.top=p.top+'px'; l.textContent=id; map.appendChild(l);
+  Object.entries(layout.scanner_positions||{}).forEach(([id,pos])=>drawDot('scanner',`📡 ${id}`,Number(pos.x||0),Number(pos.y||0)));
+  Object.entries(layout.fixed_devices||{}).forEach(([key,cfg])=>drawDot('fixed',`📍 ${cfg.name||key}`,Number(cfg.x||0),Number(cfg.y||0)));
+}
+async function save(partial){
+  await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(partial)});
+}
+function refreshDeviceSelect(){
+  const prev = fixedDeviceEl.value;
+  fixedDeviceEl.innerHTML = '<option value="">-- select device --</option>';
+  devices.forEach(d=>{
+    const o=document.createElement('option');
+    o.value=d.device_key;
+    o.textContent=`${d.name} (${d.device_key})`;
+    fixedDeviceEl.appendChild(o);
   });
+  if ([...fixedDeviceEl.options].some(o=>o.value===prev)) fixedDeviceEl.value=prev;
 }
 async function load(){
   const data=await (await fetch('api/state')).json();
   layout=data.layout || layout;
+  devices=data.devices || [];
   mapWidthEl.value=layout.map_width;
   mapHeightEl.value=layout.map_height;
   map.style.backgroundImage=data.map_available?`url(map.jpg?ts=${data.ts})`:'none';
-  renderScanners();
-}
-async function save(){
-  await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(layout)});
+  refreshDeviceSelect();
+  render();
 }
 map.addEventListener('click', async (ev)=>{
-  const id=(scannerIdEl.value||'').trim();
-  if(!id) return;
-  layout.scanner_positions[id]=toMeters(ev.clientX,ev.clientY);
-  await save();
+  const m=toMeters(ev.clientX,ev.clientY);
+  const sid=(scannerIdEl.value||'').trim();
+  const did=(fixedDeviceEl.value||'').trim();
+  if (sid){
+    layout.scanner_positions[sid]=m;
+    await save({scanner_positions:layout.scanner_positions});
+  } else if (did){
+    const d=devices.find(x=>x.device_key===did);
+    layout.fixed_devices[did]={name:(d?.name||did),x:m.x,y:m.y};
+    await save({fixed_devices:layout.fixed_devices});
+  } else {
+    return;
+  }
   await load();
 });
 uploadBtn.addEventListener('click', async ()=>{
@@ -93,7 +129,14 @@ uploadBtn.addEventListener('click', async ()=>{
 saveLayoutBtn.addEventListener('click', async ()=>{
   layout.map_width=Number(mapWidthEl.value||10);
   layout.map_height=Number(mapHeightEl.value||5);
-  await save();
+  await save({map_width:layout.map_width,map_height:layout.map_height});
+  await load();
+});
+unpinBtn.addEventListener('click', async ()=>{
+  const did=(fixedDeviceEl.value||'').trim();
+  if(!did) return;
+  delete layout.fixed_devices[did];
+  await save({fixed_devices:layout.fixed_devices});
   await load();
 });
 load();
