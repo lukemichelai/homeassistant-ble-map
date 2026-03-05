@@ -9,76 +9,90 @@ body{font-family:sans-serif;margin:0;display:grid;grid-template-columns:1fr 360p
 .dot{position:absolute;width:14px;height:14px;border-radius:50%;transform:translate(-50%,-50%);transition:left .5s linear,top .5s linear;cursor:pointer}
 .scanner{background:#2563eb}.device{background:#ef4444}.fixed{background:#10b981}.cluster{background:#f59e0b;width:22px;height:22px}
 .label{position:absolute;transform:translate(10px,-8px);font-size:12px;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:6px;transition:left .5s linear,top .5s linear;white-space:nowrap}
-a{text-decoration:none;color:#2563eb;margin-left:10px}
-.card{border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px}
-.k{color:#555}.v{font-weight:600}
+a{text-decoration:none;color:#2563eb;margin-left:10px}.card{border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px}
+.k{color:#555}.v{font-weight:600}.panel{border:1px solid #ddd;border-radius:8px;padding:8px;margin-bottom:10px}
 </style></head><body>
 <div id="main">
   <div id="top"><strong>BLE Room Map</strong><div><a href="devices">Devices</a><a href="settings">Settings</a></div></div>
   <div id="map"></div>
 </div>
 <div id="side">
+  <div class="panel">
+    <h4 style="margin:4px 0">Selected device</h4>
+    <div id="selInfo" class="k">Click a device on map</div>
+    <label>Alias <input id="aliasInput" style="width:100%"></label>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+      <button id="saveAliasBtn">Save alias</button>
+      <button id="fixBtn">Fix at current point</button>
+      <button id="moveBtn">Move fixed (click map)</button>
+      <button id="unfixBtn">Unfix</button>
+    </div>
+  </div>
   <h3 style="margin-top:4px">Live device info</h3>
   <div id="cards"></div>
 </div>
 <script>
 const map=document.getElementById('map'); const cards=document.getElementById('cards');
-let layout={map_width:10,map_height:5,scanner_positions:{}}; let mapSet=false; let expandClusters=false;
+const selInfo=document.getElementById('selInfo'); const aliasInput=document.getElementById('aliasInput');
+const saveAliasBtn=document.getElementById('saveAliasBtn'); const fixBtn=document.getElementById('fixBtn'); const moveBtn=document.getElementById('moveBtn'); const unfixBtn=document.getElementById('unfixBtn');
+let layout={map_width:10,map_height:5,scanner_positions:{},tracked_devices:{},fixed_devices:{}}; let mapSet=false; let expandClusters=false;
+let currentDevices=[]; let selectedKey=null; let moveMode=false;
+
 function px(x,y){const w=map.clientWidth,h=map.clientHeight;return{l:(x/layout.map_width)*w,t:h-(y/layout.map_height)*h}}
+function meters(clientX,clientY){const r=map.getBoundingClientRect();const x=((clientX-r.left)/r.width)*layout.map_width;const y=((r.bottom-clientY)/r.height)*layout.map_height;return{x:Number(x.toFixed(2)),y:Number(y.toFixed(2))}}
+async function saveLayout(partial){await fetch('api/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(partial)});} 
+
 function upsert(id,cls,x,y,label,onClick){const p=px(x,y); let d=document.getElementById('d_'+id), l=document.getElementById('l_'+id);
- if(!d){d=document.createElement('div');d.id='d_'+id;map.appendChild(d)}
- d.className='dot '+cls; d.style.left=p.l+'px'; d.style.top=p.t+'px'; d.onclick=onClick||null;
- if(!l){l=document.createElement('div');l.id='l_'+id;l.className='label';map.appendChild(l)}
- l.style.left=p.l+'px'; l.style.top=p.t+'px'; l.textContent=label;
+ if(!d){d=document.createElement('div');d.id='d_'+id;map.appendChild(d)} d.className='dot '+cls; d.style.left=p.l+'px'; d.style.top=p.t+'px'; d.onclick=onClick||null;
+ if(!l){l=document.createElement('div');l.id='l_'+id;l.className='label';map.appendChild(l)} l.style.left=p.l+'px'; l.style.top=p.t+'px'; l.textContent=label;
 }
-function renderCards(devices){
-  cards.innerHTML='';
-  devices.forEach(d=>{
-    const c=document.createElement('div'); c.className='card';
-    let html=`<div class='v'>${d.name}</div><div class='k'>nearest: <span class='v'>${d.nearest_scanner||'-'}</span></div>`;
-    Object.entries(d.scanners||{}).forEach(([sid,s])=>{
-      html += `<div class='k'>${sid}: RSSI <span class='v'>${s.rssi}</span> | dist ~ <span class='v'>${s.distance}m</span></div>`;
-    });
-    c.innerHTML=html; cards.appendChild(c);
-  });
-}
-function clusterDevices(devices){
-  const buckets=[]; const radius=30; // px
-  devices.forEach(d=>{
-    if(!d.xy) return;
-    const p=px(d.xy.x,d.xy.y);
-    let b=buckets.find(b=>Math.hypot(b.p.l-p.l,b.p.t-p.t)<radius);
-    if(!b){b={p,items:[]}; buckets.push(b)}
-    b.items.push(d);
-  });
-  return buckets;
-}
+function renderCards(devices){cards.innerHTML='';devices.forEach(d=>{const c=document.createElement('div');c.className='card';let h=`<div class='v'>${d.name}</div><div class='k'>nearest: <span class='v'>${d.nearest_scanner||'-'}</span></div>`;Object.entries(d.scanners||{}).forEach(([sid,s])=>{h+=`<div class='k'>${sid}: RSSI <span class='v'>${s.rssi}</span> | dist ~ <span class='v'>${s.distance}m</span></div>`});c.innerHTML=h;cards.appendChild(c);});}
+function cluster(devices){const bs=[],rad=30;devices.forEach(d=>{if(!d.xy)return;const p=px(d.xy.x,d.xy.y);let b=bs.find(b=>Math.hypot(b.p.l-p.l,b.p.t-p.t)<rad);if(!b){b={p,items:[]};bs.push(b)}b.items.push(d)});return bs;}
+function selectDevice(d){selectedKey=d.device_key; aliasInput.value=(layout.tracked_devices||{})[selectedKey]||d.name||''; selInfo.textContent=`${d.name} (${d.device_key})`}
+
+map.addEventListener('click', async (ev)=>{
+  if(!moveMode || !selectedKey) return;
+  const m=meters(ev.clientX,ev.clientY);
+  const fd=layout.fixed_devices||{};
+  const name=(layout.tracked_devices||{})[selectedKey] || (currentDevices.find(x=>x.device_key===selectedKey)?.name) || selectedKey;
+  fd[selectedKey]={name,x:m.x,y:m.y};
+  layout.fixed_devices=fd;
+  await saveLayout({fixed_devices:fd});
+  moveMode=false;
+  await tick();
+});
+
+saveAliasBtn.onclick=async()=>{
+  if(!selectedKey) return;
+  const t=layout.tracked_devices||{}; t[selectedKey]=aliasInput.value.trim(); layout.tracked_devices=t;
+  await saveLayout({tracked_devices:t}); await tick();
+};
+fixBtn.onclick=async()=>{
+  if(!selectedKey) return;
+  const d=currentDevices.find(x=>x.device_key===selectedKey); if(!d||!d.xy) return;
+  const fd=layout.fixed_devices||{}; fd[selectedKey]={name:(layout.tracked_devices||{})[selectedKey]||d.name||selectedKey,x:d.xy.x,y:d.xy.y}; layout.fixed_devices=fd;
+  await saveLayout({fixed_devices:fd}); await tick();
+};
+moveBtn.onclick=()=>{if(selectedKey){moveMode=true; selInfo.textContent += ' | click map to place'}};
+unfixBtn.onclick=async()=>{if(!selectedKey) return; const fd=layout.fixed_devices||{}; delete fd[selectedKey]; layout.fixed_devices=fd; await saveLayout({fixed_devices:fd}); await tick();};
+
 async function tick(){
-  const data=await (await fetch('api/state')).json(); layout=data.layout||layout;
+  const data=await (await fetch('api/state')).json(); layout=data.layout||layout; currentDevices=data.devices||[];
   if(!mapSet){map.style.backgroundImage=data.map_available?`url(map.jpg?ts=${data.ts})`:'none'; mapSet=true;}
-
-  // clear only dynamic elements
   [...map.querySelectorAll('.dot,.label')].forEach(el=>el.remove());
-
   Object.entries(layout.scanner_positions||{}).forEach(([id,pos])=>upsert('s_'+id,'scanner',Number(pos.x||0),Number(pos.y||0),`📡 ${id}`));
   (data.fixed_devices||[]).forEach(d=>upsert('f_'+d.device_key,'fixed',Number(d.xy.x||0),Number(d.xy.y||0),`📍 ${d.name}`));
-
-  const devices=data.devices||[];
-  const groups=clusterDevices(devices);
+  const groups=cluster(currentDevices);
   groups.forEach((g,idx)=>{
     if(g.items.length===1 || expandClusters){
-      g.items.forEach(d=>{
-        const nearest=d.nearest_scanner; const s=(d.scanners||{})[nearest]||{};
-        upsert('m_'+d.device_key,'device',d.xy.x,d.xy.y,`📱 ${d.name} | ${nearest||'-'} RSSI ${s.rssi??'-'} | ~${s.distance??'-'}m`);
-      });
+      g.items.forEach(d=>{const n=d.nearest_scanner;const s=(d.scanners||{})[n]||{};upsert('m_'+d.device_key,'device',d.xy.x,d.xy.y,`📱 ${d.name} | ${n||'-'} RSSI ${s.rssi??'-'} | ~${s.distance??'-'}m`,()=>selectDevice(d));});
     } else {
-      const names=g.items.slice(0,4).map(x=>x.name).join(', ')+(g.items.length>4?' ...':'');
+      const names=g.items.slice(0,3).map(x=>x.name).join(', ')+(g.items.length>3?' ...':'');
       const mx=(g.items.reduce((a,b)=>a+b.xy.x,0)/g.items.length), my=(g.items.reduce((a,b)=>a+b.xy.y,0)/g.items.length);
       upsert('c_'+idx,'cluster',mx,my,`🧩 ${g.items.length} devices (${names})`,()=>{expandClusters=true; tick();});
     }
   });
-
-  renderCards(devices);
+  renderCards(currentDevices);
 }
 setInterval(tick,1000); tick();
 </script></body></html>
